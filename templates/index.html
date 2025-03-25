@@ -1,9 +1,29 @@
-<!DOCTYPE html><html lang="zh-CN"><head><meta http-equiv="Content-Security-Policy" content="default-src 'self' 'unsafe-inline' 'unsafe-eval' data: blob: https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://code.jquery.com https://unpkg.com https://d3js.org https://threejs.org https://cdn.plot.ly https://stackpath.bootstrapcdn.com https://maps.googleapis.com https://cdn.tailwindcss.com https://ajax.googleapis.com https://kit.fontawesome.com https://cdn.datatables.net https://maxcdn.bootstrapcdn.com https://code.highcharts.com https://tako-static-assets-production.s3.amazonaws.com https://www.youtube.com https://fonts.googleapis.com https://fonts.gstatic.com https://pfst.cf2.poecdn.net https://puc.poecdn.net https://i.imgur.com https://wikimedia.org https://*.icons8.com https://*.giphy.com https://picsum.photos https://images.unsplash.com; frame-src 'self' https://www.youtube.com https://trytako.com; child-src 'self'; manifest-src 'self'; worker-src 'self'; upgrade-insecure-requests; block-all-mixed-content;">
-    <meta http-equiv="Content-Security-Policy" content="default-src 'self' 'unsafe-inline' 'unsafe-eval' data: blob: https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://code.jquery.com https://unpkg.com https://d3js.org https://threejs.org https://cdn.plot.ly https://stackpath.bootstrapcdn.com https://maps.googleapis.com https://cdn.tailwindcss.com https://ajax.googleapis.com https://kit.fontawesome.com https://cdn.datatables.net https://maxcdn.bootstrapcdn.com https://code.highcharts.com https://tako-static-assets-production.s3.amazonaws.com https://www.youtube.com https://fonts.googleapis.com https://fonts.gstatic.com https://pfst.cf2.poecdn.net https://puc.poecdn.net https://i.imgur.com https://wikimedia.org https://*.icons8.com https://*.giphy.com https://picsum.photos https://images.unsplash.com; frame-src 'self' https://www.youtube.com https://trytako.com; child-src 'self'; manifest-src 'self'; worker-src 'self'; upgrade-insecure-requests; block-all-mixed-content;">
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>PPT 处理工具</title>
+    <title>PPT 智能备注工具</title>
     <style>
+        :root {
+            --primary: #2074E8;
+            --primary-light: #E7F1FF;
+            --primary-dark: #0567E8;
+            --primary-gradient: linear-gradient(90deg, #0567E8 0%, #7849FE 100%);
+            --accent: #7849FE;
+            --gray-100: #F1F5FF;
+            --gray-200: #E5EBFA;
+            --gray-300: #D1DBEE;
+            --gray-400: #9CA7BD;
+            --gray-500: #6B7896;
+            --gray-600: #4B5673;
+            --dark: #212B45;
+            --shadow-sm: 0 1px 2px 0 rgba(5, 103, 232, 0.05);
+            --shadow: 0 4px 6px -1px rgba(5, 103, 232, 0.1);
+            --shadow-md: 0 10px 15px -3px rgba(5, 103, 232, 0.1);
+            --border-radius: 0.375rem;
+        }
+
         * {
             margin: 0;
             padding: 0;
@@ -12,94 +32,240 @@
 
         body {
             font-family: "PingFang SC", "Microsoft YaHei", sans-serif;
-            background-color: #f5f5f5;
+            background-color: #F7F9FF;
+            color: var(--dark);
+            line-height: 1.4;
             min-height: 100vh;
             display: flex;
             flex-direction: column;
+        }
+
+        .top-header {
+            background: var(--primary-gradient);
+            color: white;
+            padding: 1rem 0;
+            box-shadow: var(--shadow);
+        }
+
+        .top-header-content {
+            display: flex;
             align-items: center;
-            padding: 20px;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 0 2rem;
+        }
+
+        .header-title {
+            font-size: 1.5rem;
+            font-weight: 700;
         }
 
         .container {
-            max-width: 800px;
+            max-width: 1200px;
             width: 100%;
-            background: white;
-            padding: 20px;
-            border-radius: 8px;
-            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+            margin: 2rem auto;
+            padding: 0 2rem;
+            flex-grow: 1;
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 2rem;
         }
 
-        h1 {
-            text-align: center;
-            margin-bottom: 20px;
-            color: #333;
+        .panel {
+            background: white;
+            border-radius: var(--border-radius);
+            box-shadow: var(--shadow-md);
+            overflow: hidden;
+        }
+
+        .panel-header {
+            padding: 1.25rem;
+            border-bottom: 1px solid var(--gray-200);
+            background: white;
+        }
+
+        .panel-title {
+            font-size: 1.25rem;
+            font-weight: 600;
+            color: var(--dark);
+            margin-bottom: 0.25rem;
+        }
+
+        .panel-subtitle {
+            color: var(--gray-500);
+            font-size: 0.875rem;
+        }
+
+        .panel-content {
+            padding: 1.5rem;
         }
 
         .upload-area {
-            border: 2px dashed #ccc;
-            padding: 40px;
+            border: 2px dashed var(--gray-300);
+            padding: 2rem;
             text-align: center;
-            margin-bottom: 20px;
-            border-radius: 4px;
+            border-radius: var(--border-radius);
             cursor: pointer;
             transition: all 0.3s ease;
+            background-color: var(--gray-100);
         }
 
         .upload-area:hover {
-            border-color: #2196F3;
-            background-color: #f8f9fa;
+            border-color: var(--primary);
+            background-color: var(--primary-light);
+        }
+
+        .upload-icon {
+            font-size: 2.5rem;
+            color: var(--primary);
+            margin-bottom: 1rem;
         }
 
         .btn {
-            background-color: #2196F3;
-            color: white;
-            padding: 10px 20px;
-            border: none;
-            border-radius: 4px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            padding: 0.75rem 1.5rem;
+            border-radius: var(--border-radius);
+            font-weight: 600;
+            font-size: 0.875rem;
             cursor: pointer;
-            font-size: 16px;
-            transition: background-color 0.3s ease;
+            transition: all 0.2s ease;
+            border: none;
+            outline: none;
         }
 
-        .btn:hover {
-            background-color: #1976D2;
+        .btn-primary {
+            background-color: var(--primary);
+            color: white;
+            box-shadow: 0 4px 12px rgba(5, 103, 232, 0.2);
+            margin-top: 1rem;
         }
 
-        .btn:disabled {
-            background-color: #ccc;
+        .btn-primary:hover {
+            background-color: var(--primary-dark);
+            transform: translateY(-1px);
+        }
+
+        .btn-primary:disabled {
+            background-color: var(--gray-400);
             cursor: not-allowed;
         }
 
+        .btn-download {
+            background-color: var(--accent);
+            color: white;
+            box-shadow: 0 4px 12px rgba(120, 73, 254, 0.2);
+            margin-top: 1rem;
+            display: none;
+        }
+
+        .btn-download:hover {
+            background-color: #6438E4;
+            transform: translateY(-1px);
+        }
+
         #file-info {
-            margin-top: 10px;
-            color: #666;
+            margin-top: 1rem;
+            padding: 1rem;
+            background: white;
+            border-radius: var(--border-radius);
+            border: 1px solid var(--gray-200);
+            display: none;
+        }
+
+        .file-name {
+            font-weight: 600;
+            color: var(--dark);
+        }
+
+        .file-size {
+            color: var(--gray-500);
+            font-size: 0.875rem;
+            margin-top: 0.25rem;
         }
 
         .processing {
             display: none;
             text-align: center;
-            margin-top: 20px;
-            color: #2196F3;
+            margin-top: 1rem;
+            color: var(--primary);
+            font-weight: 500;
         }
 
         .error {
             color: #f44336;
-            margin-top: 10px;
+            margin-top: 1rem;
             text-align: center;
+            padding: 0.75rem;
+            background: #ffebee;
+            border-radius: var(--border-radius);
+            display: none;
+        }
+
+        .success {
+            color: #4CAF50;
+            background: #E8F5E9;
+        }
+
+        @media (max-width: 768px) {
+            .container {
+                grid-template-columns: 1fr;
+                padding: 1rem;
+            }
+            
+            .top-header-content {
+                padding: 0 1rem;
+            }
         }
     </style>
 </head>
 <body>
-    <div class="container">
-        <h1>PPT 处理工具</h1>
-        <div class="upload-area" id="upload-area">
-            <p>点击或拖拽PPT文件到这里</p>
-            <input type="file" id="file-input" style="display: none" accept=".ppt,.pptx">
-            <button class="btn" id="upload-btn">选择文件</button>
+    <header class="top-header">
+        <div class="top-header-content">
+            <h1 class="header-title">PPT 智能备注工具</h1>
         </div>
-        <div id="file-info"></div>
-        <div class="processing" id="processing">处理中...</div>
-        <div class="error" id="error"></div>
+    </header>
+
+    <div class="container">
+        <div class="panel">
+            <div class="panel-header">
+                <h2 class="panel-title">上传 PPT 文件</h2>
+                <p class="panel-subtitle">支持 .ppt 和 .pptx 格式文件</p>
+            </div>
+            <div class="panel-content">
+                <div class="upload-area" id="upload-area">
+                    <div class="upload-icon">📄</div>
+                    <p>点击或拖拽PPT文件到这里</p>
+                    <input type="file" id="file-input" style="display: none" accept=".ppt,.pptx">
+                    <button class="btn btn-primary" id="upload-btn">选择文件</button>
+                </div>
+                <div id="file-info">
+                    <div class="file-name"></div>
+                    <div class="file-size"></div>
+                </div>
+                <div class="processing" id="processing">
+                    <span>正在处理文件，请稍候...</span>
+                </div>
+                <div class="error" id="error"></div>
+            </div>
+        </div>
+
+        <div class="panel">
+            <div class="panel-header">
+                <h2 class="panel-title">处理结果</h2>
+                <p class="panel-subtitle">查看处理后的文件内容</p>
+            </div>
+            <div class="panel-content" id="result-content">
+                <div id="result-placeholder" style="text-align: center; color: var(--gray-500);">
+                    等待文件上传...
+                </div>
+                <div id="result-text" style="display: none;"></div>
+                <button class="btn btn-download" id="download-btn">
+                    <span>下载带备注的PPT</span>
+                </button>
+            </div>
+        </div>
     </div>
 
     <script>
@@ -109,6 +275,10 @@
         const fileInfo = document.getElementById('file-info');
         const processing = document.getElementById('processing');
         const error = document.getElementById('error');
+        const resultContent = document.getElementById('result-content');
+        const resultPlaceholder = document.getElementById('result-placeholder');
+        const resultText = document.getElementById('result-text');
+        const downloadBtn = document.getElementById('download-btn');
 
         uploadBtn.addEventListener('click', () => {
             fileInput.click();
@@ -116,20 +286,20 @@
 
         uploadArea.addEventListener('dragover', (e) => {
             e.preventDefault();
-            uploadArea.style.borderColor = '#2196F3';
-            uploadArea.style.backgroundColor = '#f8f9fa';
+            uploadArea.style.borderColor = 'var(--primary)';
+            uploadArea.style.backgroundColor = 'var(--primary-light)';
         });
 
         uploadArea.addEventListener('dragleave', (e) => {
             e.preventDefault();
-            uploadArea.style.borderColor = '#ccc';
-            uploadArea.style.backgroundColor = 'white';
+            uploadArea.style.borderColor = 'var(--gray-300)';
+            uploadArea.style.backgroundColor = 'var(--gray-100)';
         });
 
         uploadArea.addEventListener('drop', (e) => {
             e.preventDefault();
-            uploadArea.style.borderColor = '#ccc';
-            uploadArea.style.backgroundColor = 'white';
+            uploadArea.style.borderColor = 'var(--gray-300)';
+            uploadArea.style.backgroundColor = 'var(--gray-100)';
             
             const files = e.dataTransfer.files;
             if (files.length > 0) {
@@ -143,20 +313,32 @@
             }
         });
 
+        function formatFileSize(bytes) {
+            if (bytes < 1024) return bytes + ' B';
+            else if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(2) + ' KB';
+            else return (bytes / (1024 * 1024)).toFixed(2) + ' MB';
+        }
+
         function handleFile(file) {
             if (!file.name.endsWith('.ppt') && !file.name.endsWith('.pptx')) {
                 error.textContent = '请上传PPT文件（.ppt或.pptx格式）';
+                error.style.display = 'block';
                 return;
             }
 
-            error.textContent = '';
-            fileInfo.textContent = `已选择文件: ${file.name}`;
+            error.style.display = 'none';
+            fileInfo.style.display = 'block';
+            fileInfo.querySelector('.file-name').textContent = '文件名：' + file.name;
+            fileInfo.querySelector('.file-size').textContent = '大小：' + formatFileSize(file.size);
             
             const formData = new FormData();
             formData.append('file', file);
 
             processing.style.display = 'block';
             uploadBtn.disabled = true;
+            downloadBtn.style.display = 'none';
+            resultPlaceholder.style.display = 'none';
+            resultText.style.display = 'none';
 
             fetch('/api/process-ppt', {
                 method: 'POST',
@@ -171,25 +353,27 @@
                 return response.blob();
             })
             .then(blob => {
-                const url = window.URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                a.href = url;
-                a.download = 'processed_' + file.name;
-                document.body.appendChild(a);
-                a.click();
-                window.URL.revokeObjectURL(url);
-                document.body.removeChild(a);
+                resultPlaceholder.style.display = 'none';
+                resultText.style.display = 'block';
+                resultText.innerHTML = '<p>文件处理完成！</p><p>备注已添加到PPT中。</p>';
+                downloadBtn.style.display = 'inline-flex';
                 
-                // 显示成功消息
-                error.style.color = '#4CAF50';
-                error.textContent = '文件处理成功！';
+                // 存储处理后的文件数据
+                const url = window.URL.createObjectURL(blob);
+                downloadBtn.setAttribute('data-file-url', url);
+                
+                error.textContent = '处理成功！';
+                error.classList.add('success');
+                error.style.display = 'block';
+                
                 setTimeout(() => {
-                    error.textContent = '';
-                    error.style.color = '#f44336';
+                    error.style.display = 'none';
+                    error.classList.remove('success');
                 }, 3000);
             })
             .catch(err => {
                 error.textContent = err.message;
+                error.style.display = 'block';
                 console.error('Error:', err);
             })
             .finally(() => {
@@ -197,6 +381,18 @@
                 uploadBtn.disabled = false;
             });
         }
+
+        downloadBtn.addEventListener('click', () => {
+            const fileUrl = downloadBtn.getAttribute('data-file-url');
+            if (!fileUrl) return;
+
+            const a = document.createElement('a');
+            a.href = fileUrl;
+            a.download = 'processed_ppt.pptx';
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+        });
     </script>
 </body>
 </html>

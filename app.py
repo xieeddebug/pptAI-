@@ -3,8 +3,59 @@ from pptx import Presentation
 import os
 import tempfile
 import traceback
+import requests
+import json
 
 app = Flask(__name__)
+
+# Dify API配置
+DIFY_API_URL = "http://10.119.14.166/v1/chat-messages"
+DIFY_API_KEY = "Bearer app-ujLJoBR6bFWdo33nqmgOoEdM"
+
+def get_dify_response(slide_text):
+    headers = {
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+        "Authorization": DIFY_API_KEY
+    }
+    
+    data = {
+        "query": f"请为以下PPT内容生成一段简短的备注说明：{slide_text}",
+        "response_mode": "blocking",
+        "conversation_id": "",
+        "user": "ppt_user",
+        "inputs": {},
+        "query_parameters": {}
+    }
+    
+    try:
+        print(f"正在调用Dify API，内容：{slide_text[:100]}...")  # 打印前100个字符
+        response = requests.post(DIFY_API_URL, headers=headers, json=data)
+        print(f"API响应状态码：{response.status_code}")
+        print(f"API响应内容：{response.text[:200]}...")  # 打印前200个字符
+        
+        response.raise_for_status()
+        result = response.json()
+        
+        if 'answer' in result:
+            return result['answer']
+        elif 'choices' in result and len(result['choices']) > 0:
+            return result['choices'][0].get('message', {}).get('content', '')
+        else:
+            print(f"API返回结果格式：{json.dumps(result, ensure_ascii=False)}")
+            return "无法解析API返回结果"
+            
+    except requests.exceptions.RequestException as e:
+        print(f"API请求错误: {str(e)}")
+        return f"API请求错误: {str(e)}"
+    except json.JSONDecodeError as e:
+        print(f"JSON解析错误: {str(e)}")
+        print(f"原始响应内容: {response.text}")
+        return "API返回格式错误"
+    except Exception as e:
+        print(f"其他错误: {str(e)}")
+        print(f"错误堆栈: {traceback.format_exc()}")
+        return f"发生错误: {str(e)}"
 
 @app.route('/')
 def index():
@@ -13,80 +64,78 @@ def index():
 @app.route('/api/process-ppt', methods=['POST'])
 def process_ppt():
     if 'file' not in request.files:
-        return jsonify({'error': '没有文件'}), 400
+        return jsonify({'error': '没有上传文件'}), 400
     
     file = request.files['file']
     if file.filename == '':
         return jsonify({'error': '没有选择文件'}), 400
     
-    if not file.filename.endswith(('.ppt', '.pptx')):
-        return jsonify({'error': '请上传.ppt或.pptx格式的文件'}), 400
+    if not (file.filename.endswith('.ppt') or file.filename.endswith('.pptx')):
+        return jsonify({'error': '请上传PPT文件（.ppt或.pptx格式）'}), 400
 
     try:
-        # 创建临时文件来保存上传的PPT
-        temp_dir = tempfile.mkdtemp()
-        input_path = os.path.join(temp_dir, 'input.pptx')
-        output_path = os.path.join(temp_dir, 'output.pptx')
-        
-        # 保存上传的文件
-        file.save(input_path)
-        
-        try:
-            # 打开PPT文件
-            prs = Presentation(input_path)
-        except Exception as e:
-            return jsonify({'error': f'无法打开PPT文件: {str(e)}'}), 400
-        
-        try:
-            # 在每一页添加文字
-            for slide in prs.slides:
-                # 添加文本框
-                left = prs.slide_width * 0.1  # 左边距为幻灯片宽度的10%
-                top = prs.slide_height * 0.1   # 上边距为幻灯片高度的10%
-                width = prs.slide_width * 0.8  # 宽度为幻灯片宽度的80%
-                height = prs.slide_height * 0.1 # 高度为幻灯片高度的10%
-                
-                txBox = slide.shapes.add_textbox(left, top, width, height)
-                tf = txBox.text_frame
-                
-                # 添加文字
-                p = tf.add_paragraph()
-                p.text = "上海交大"
-                p.font.size = 1000000  # 10pt
-                p.font.name = '微软雅黑'
+        # 创建临时文件保存上传的PPT
+        with tempfile.NamedTemporaryFile(delete=False, suffix='.pptx') as temp_input:
+            file.save(temp_input.name)
+            input_path = temp_input.name
+
+        # 创建临时文件保存处理后的PPT
+        with tempfile.NamedTemporaryFile(delete=False, suffix='.pptx') as temp_output:
+            output_path = temp_output.name
+
+        # 打开PPT文件
+        prs = Presentation(input_path)
+
+        # 为每一页添加备注
+        for i, slide in enumerate(prs.slides, 1):
+            print(f"\n处理第 {i} 页...")
             
-            # 保存修改后的PPT
-            prs.save(output_path)
-        except Exception as e:
-            return jsonify({'error': f'处理PPT时出错: {str(e)}'}), 500
-        
-        try:
-            # 发送文件
-            return send_file(
-                output_path,
-                as_attachment=True,
-                download_name='processed_' + file.filename,
-                mimetype='application/vnd.openxmlformats-officedocument.presentationml.presentation'
-            )
-        except Exception as e:
-            return jsonify({'error': f'发送文件时出错: {str(e)}'}), 500
+            # 获取幻灯片文本内容
+            slide_text = ""
+            for shape in slide.shapes:
+                if hasattr(shape, "text"):
+                    slide_text += shape.text + "\n"
             
+            print(f"提取的文本内容：{slide_text[:100]}...")  # 打印前100个字符
+            
+            # 获取Dify生成的备注内容
+            notes_content = get_dify_response(slide_text)
+            print(f"生成的备注内容：{notes_content}")
+            
+            if not notes_content:
+                notes_content = f"第{i}页备注生成失败"
+            
+            # 获取或创建备注页
+            notes_slide = slide.notes_slide
+            notes_text_frame = notes_slide.notes_text_frame
+            
+            # 添加备注
+            notes_text_frame.text = notes_content
+
+        # 保存处理后的PPT
+        prs.save(output_path)
+        print("\nPPT处理完成")
+
+        # 删除临时输入文件
+        os.unlink(input_path)
+
+        # 发送处理后的文件
+        return send_file(
+            output_path,
+            as_attachment=True,
+            download_name='processed_ppt.pptx',
+            mimetype='application/vnd.openxmlformats-officedocument.presentationml.presentation'
+        )
+
     except Exception as e:
-        # 捕获所有其他异常
-        error_msg = f'发生错误: {str(e)}\n{traceback.format_exc()}'
-        print(error_msg)  # 在服务器端打印详细错误信息
-        return jsonify({'error': '处理文件时发生错误，请重试'}), 500
-        
-    finally:
+        print(f"处理PPT时出错: {str(e)}")
+        print(f"错误堆栈: {traceback.format_exc()}")
         # 清理临时文件
-        try:
-            if os.path.exists(input_path):
-                os.remove(input_path)
-            if os.path.exists(output_path):
-                os.remove(output_path)
-            os.rmdir(temp_dir)
-        except Exception as e:
-            print(f'清理临时文件时出错: {str(e)}')
+        if 'input_path' in locals():
+            os.unlink(input_path)
+        if 'output_path' in locals():
+            os.unlink(output_path)
+        return jsonify({'error': f'处理文件时出错: {str(e)}'}), 500
 
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0', port=5000) 
