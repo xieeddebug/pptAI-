@@ -5,6 +5,10 @@ import tempfile
 import traceback
 import requests
 import json
+from docx import Document
+from docx.shared import Pt, RGBColor
+from docx.enum.text import WD_ALIGN_PARAGRAPH
+from docx.oxml.ns import qn
 
 app = Flask(__name__)
 
@@ -57,6 +61,64 @@ def get_dify_response(slide_text):
         print(f"错误堆栈: {traceback.format_exc()}")
         return f"发生错误: {str(e)}"
 
+def generate_speech(ppt_text):
+    headers = {
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+        "Authorization": DIFY_API_KEY
+    }
+    
+    data = {
+        "query": f"请根据以下PPT内容生成一份完整的演讲稿，要求：\n1. 语言要正式、专业\n2. 加入适当的过渡语和连接词\n3. 每页PPT的内容要连贯\n4. 适合领导演讲使用\n5. 包含开场白和结束语\n\nPPT内容：{ppt_text}",
+        "response_mode": "blocking",
+        "conversation_id": "",
+        "user": "ppt_user",
+        "inputs": {},
+        "query_parameters": {}
+    }
+    
+    try:
+        print("正在生成演讲稿...")
+        response = requests.post(DIFY_API_URL, headers=headers, json=data)
+        print(f"API响应状态码：{response.status_code}")
+        
+        response.raise_for_status()
+        result = response.json()
+        
+        if 'answer' in result:
+            return result['answer']
+        elif 'choices' in result and len(result['choices']) > 0:
+            return result['choices'][0].get('message', {}).get('content', '')
+        else:
+            return "无法生成演讲稿"
+            
+    except Exception as e:
+        print(f"生成演讲稿时出错: {str(e)}")
+        return f"生成演讲稿时出错: {str(e)}"
+
+def create_word_document(speech_text):
+    doc = Document()
+    
+    # 设置标题
+    title = doc.add_heading('演讲稿', 0)
+    title.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    
+    # 添加正文
+    paragraphs = speech_text.split('\n')
+    for para in paragraphs:
+        if para.strip():
+            p = doc.add_paragraph()
+            # 设置段落格式
+            p.paragraph_format.line_spacing = 1.5
+            p.paragraph_format.first_line_indent = Pt(24)
+            # 添加文本
+            run = p.add_run(para.strip())
+            # 设置字体
+            run.font.name = '宋体'
+            run.font.size = Pt(12)
+    
+    return doc
+
 @app.route('/')
 def index():
     return render_template('index.html')
@@ -85,7 +147,7 @@ def process_ppt():
 
         # 打开PPT文件
         prs = Presentation(input_path)
-
+        
         # 为每一页添加备注
         for i, slide in enumerate(prs.slides, 1):
             print(f"\n处理第 {i} 页...")
@@ -136,6 +198,65 @@ def process_ppt():
         if 'output_path' in locals():
             os.unlink(output_path)
         return jsonify({'error': f'处理文件时出错: {str(e)}'}), 500
+
+@app.route('/api/generate-speech', methods=['POST'])
+def generate_speech_route():
+    if 'file' not in request.files:
+        return jsonify({'error': '没有上传文件'}), 400
+    
+    file = request.files['file']
+    if file.filename == '':
+        return jsonify({'error': '没有选择文件'}), 400
+    
+    if not (file.filename.endswith('.ppt') or file.filename.endswith('.pptx')):
+        return jsonify({'error': '请上传PPT文件（.ppt或.pptx格式）'}), 400
+
+    try:
+        # 创建临时文件保存上传的PPT
+        with tempfile.NamedTemporaryFile(delete=False, suffix='.pptx') as temp_input:
+            file.save(temp_input.name)
+            input_path = temp_input.name
+
+        # 打开PPT文件
+        prs = Presentation(input_path)
+        
+        # 提取所有文本
+        all_text = ""
+        for i, slide in enumerate(prs.slides, 1):
+            slide_text = ""
+            for shape in slide.shapes:
+                if hasattr(shape, "text"):
+                    slide_text += shape.text + "\n"
+            all_text += f"第{i}页：\n{slide_text}\n"
+
+        # 生成演讲稿
+        speech_text = generate_speech(all_text)
+        
+        # 创建Word文档
+        doc = create_word_document(speech_text)
+        
+        # 保存Word文档
+        with tempfile.NamedTemporaryFile(delete=False, suffix='.docx') as temp_doc:
+            doc.save(temp_doc.name)
+            doc_path = temp_doc.name
+
+        # 发送Word文档
+        return send_file(
+            doc_path,
+            as_attachment=True,
+            download_name='演讲稿.docx',
+            mimetype='application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+        )
+
+    except Exception as e:
+        print(f"生成演讲稿时出错: {str(e)}")
+        print(f"错误堆栈: {traceback.format_exc()}")
+        # 清理临时文件
+        if 'input_path' in locals():
+            os.unlink(input_path)
+        if 'doc_path' in locals():
+            os.unlink(doc_path)
+        return jsonify({'error': f'生成演讲稿时出错: {str(e)}'}), 500
 
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0', port=5000) 

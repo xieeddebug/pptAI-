@@ -139,7 +139,6 @@
             background-color: var(--primary);
             color: white;
             box-shadow: 0 4px 12px rgba(5, 103, 232, 0.2);
-            margin-top: 1rem;
         }
 
         .btn-primary:hover {
@@ -156,8 +155,6 @@
             background-color: var(--accent);
             color: white;
             box-shadow: 0 4px 12px rgba(120, 73, 254, 0.2);
-            margin-top: 1rem;
-            display: none;
         }
 
         .btn-download:hover {
@@ -208,6 +205,30 @@
             background: #E8F5E9;
         }
 
+        .button-group {
+            display: flex;
+            justify-content: flex-end;
+            gap: 10px;
+            margin-top: 20px;
+        }
+        .progress {
+            display: none;
+            margin-top: 1rem;
+        }
+        .progress-bar {
+            width: 100%;
+            height: 4px;
+            background-color: var(--gray-200);
+            border-radius: 2px;
+            overflow: hidden;
+        }
+        .progress-fill {
+            height: 100%;
+            background-color: var(--primary);
+            width: 0%;
+            transition: width 0.3s ease;
+        }
+
         @media (max-width: 768px) {
             .container {
                 grid-template-columns: 1fr;
@@ -244,8 +265,10 @@
                     <div class="file-name"></div>
                     <div class="file-size"></div>
                 </div>
-                <div class="processing" id="processing">
-                    <span>正在处理文件，请稍候...</span>
+                <div class="progress" id="progress">
+                    <div class="progress-bar">
+                        <div class="progress-fill"></div>
+                    </div>
                 </div>
                 <div class="error" id="error"></div>
             </div>
@@ -261,9 +284,13 @@
                     等待文件上传...
                 </div>
                 <div id="result-text" style="display: none;"></div>
-                <button class="btn btn-download" id="download-btn">
-                    <span>下载带备注的PPT</span>
-                </button>
+                <div class="button-group">
+                    <button class="btn btn-download" id="download-btn">
+                        <span>下载带备注的PPT</span>
+                    </button>
+                    <button class="btn btn-primary" id="generatePptButton" onclick="generatePpt()" disabled>生成新PPT</button>
+                    <button class="btn btn-primary" id="speechButton" onclick="generateSpeech()" disabled>生成演讲稿</button>
+                </div>
             </div>
         </div>
     </div>
@@ -273,12 +300,15 @@
         const fileInput = document.getElementById('file-input');
         const uploadBtn = document.getElementById('upload-btn');
         const fileInfo = document.getElementById('file-info');
-        const processing = document.getElementById('processing');
+        const progress = document.getElementById('progress');
         const error = document.getElementById('error');
         const resultContent = document.getElementById('result-content');
         const resultPlaceholder = document.getElementById('result-placeholder');
         const resultText = document.getElementById('result-text');
         const downloadBtn = document.getElementById('download-btn');
+        const speechButton = document.getElementById('speechButton');
+        const generatePptButton = document.getElementById('generatePptButton');
+        let currentFile = null;
 
         uploadBtn.addEventListener('click', () => {
             fileInput.click();
@@ -331,18 +361,19 @@
             fileInfo.querySelector('.file-name').textContent = '文件名：' + file.name;
             fileInfo.querySelector('.file-size').textContent = '大小：' + formatFileSize(file.size);
             
-            const formData = new FormData();
-            formData.append('file', file);
-
-            processing.style.display = 'block';
-            uploadBtn.disabled = true;
-            downloadBtn.style.display = 'none';
+            currentFile = file;
+            speechButton.disabled = false;
+            generatePptButton.disabled = false;
             resultPlaceholder.style.display = 'none';
             resultText.style.display = 'none';
 
+            progress.style.display = 'block';
+            uploadBtn.disabled = true;
+            downloadBtn.style.display = 'inline-flex';
+
             fetch('/api/process-ppt', {
                 method: 'POST',
-                body: formData
+                body: new FormData(new Blob([JSON.stringify({ file: file })]))
             })
             .then(response => {
                 if (!response.ok) {
@@ -356,9 +387,7 @@
                 resultPlaceholder.style.display = 'none';
                 resultText.style.display = 'block';
                 resultText.innerHTML = '<p>文件处理完成！</p><p>备注已添加到PPT中。</p>';
-                downloadBtn.style.display = 'inline-flex';
                 
-                // 存储处理后的文件数据
                 const url = window.URL.createObjectURL(blob);
                 downloadBtn.setAttribute('data-file-url', url);
                 
@@ -375,9 +404,10 @@
                 error.textContent = err.message;
                 error.style.display = 'block';
                 console.error('Error:', err);
+                downloadBtn.style.display = 'none';
             })
             .finally(() => {
-                processing.style.display = 'none';
+                progress.style.display = 'none';
                 uploadBtn.disabled = false;
             });
         }
@@ -393,6 +423,100 @@
             a.click();
             document.body.removeChild(a);
         });
+
+        async function generateSpeech() {
+            if (!currentFile) return;
+
+            const formData = new FormData();
+            formData.append('file', currentFile);
+
+            try {
+                speechButton.disabled = true;
+                showStatus('正在生成演讲稿...', 'success');
+                progress.style.display = 'block';
+                progress.querySelector('.progress-fill').style.width = '0%';
+
+                const response = await fetch('/api/generate-speech', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                if (!response.ok) {
+                    const error = await response.json();
+                    throw new Error(error.error || '生成失败');
+                }
+
+                const blob = await response.blob();
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = '演讲稿.docx';
+                document.body.appendChild(a);
+                a.click();
+                window.URL.revokeObjectURL(url);
+                document.body.removeChild(a);
+
+                showStatus('演讲稿生成成功！', 'success');
+                progress.querySelector('.progress-fill').style.width = '100%';
+            } catch (error) {
+                showStatus('生成失败：' + error.message, 'error');
+            } finally {
+                speechButton.disabled = false;
+                setTimeout(() => {
+                    progress.style.display = 'none';
+                }, 1000);
+            }
+        }
+
+        async function generatePpt() {
+            if (!currentFile) return;
+
+            const formData = new FormData();
+            formData.append('file', currentFile);
+
+            try {
+                generatePptButton.disabled = true;
+                showStatus('正在为PPT添加备注...', 'success');
+                progress.style.display = 'block';
+                progress.querySelector('.progress-fill').style.width = '0%';
+
+                const response = await fetch('/api/process-ppt', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                if (!response.ok) {
+                    const error = await response.json();
+                    throw new Error(error.error || '生成失败');
+                }
+
+                const blob = await response.blob();
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = 'processed_ppt.pptx';
+                document.body.appendChild(a);
+                a.click();
+                window.URL.revokeObjectURL(url);
+                document.body.removeChild(a);
+
+                showStatus('PPT备注添加成功！', 'success');
+                progress.querySelector('.progress-fill').style.width = '100%';
+            } catch (error) {
+                showStatus('生成失败：' + error.message, 'error');
+            } finally {
+                generatePptButton.disabled = false;
+                setTimeout(() => {
+                    progress.style.display = 'none';
+                }, 1000);
+            }
+        }
+
+        function showStatus(message, type) {
+            error.textContent = message;
+            error.className = type;
+            error.style.display = 'block';
+        }
     </script>
 </body>
 </html>
