@@ -98,6 +98,9 @@
 
         .panel-content {
             padding: 1.5rem;
+            display: flex;
+            flex-direction: column;
+            height: 100%;
         }
 
         .upload-area {
@@ -162,6 +165,12 @@
             transform: translateY(-1px);
         }
 
+        .btn-download:disabled {
+            background-color: var(--gray-400);
+            cursor: not-allowed;
+            transform: none;
+        }
+
         #file-info {
             margin-top: 1rem;
             padding: 1rem;
@@ -209,11 +218,14 @@
             display: flex;
             justify-content: flex-end;
             gap: 10px;
-            margin-top: 20px;
+            margin-top: 0;
         }
         .progress {
             display: none;
             margin-top: 1rem;
+            text-align: center;
+            color: var(--primary);
+            font-size: 0.875rem;
         }
         .progress-bar {
             width: 100%;
@@ -228,6 +240,130 @@
             width: 0%;
             transition: width 0.3s ease;
         }
+        .progress-text {
+            text-align: center;
+            color: var(--primary);
+            font-size: 0.875rem;
+            margin-top: 0.5rem;
+        }
+
+        .chat-container {
+            flex-grow: 1;
+            display: flex;
+            flex-direction: column;
+            margin-bottom: 1rem;
+            border: 1px solid var(--gray-200);
+            border-radius: var(--border-radius);
+            overflow: hidden;
+            min-height: 250px;
+            max-height: 300px;
+        }
+
+        .chat-messages {
+            flex-grow: 1;
+            padding: 0.75rem;
+            overflow-y: auto;
+            max-height: 200px;
+        }
+
+        .message {
+            margin-bottom: 0.5rem;
+            padding: 0.4rem 0.6rem;
+            border-radius: var(--border-radius);
+            max-width: 80%;
+            font-size: 0.85rem;
+        }
+
+        .message p {
+            margin-bottom: 0.5rem;
+        }
+
+        .message ul, .message ol {
+            margin-bottom: 0.5rem;
+            padding-left: 1.5rem;
+        }
+
+        .message li {
+            margin-bottom: 0.25rem;
+        }
+
+        .message strong {
+            font-weight: 600;
+            color: var(--primary);
+        }
+
+        .message em {
+            font-style: italic;
+        }
+
+        .message code {
+            background-color: var(--gray-100);
+            padding: 0.2rem 0.4rem;
+            border-radius: 0.2rem;
+            font-family: monospace;
+        }
+
+        .message pre {
+            background-color: var(--gray-100);
+            padding: 0.5rem;
+            border-radius: 0.3rem;
+            overflow-x: auto;
+            margin: 0.5rem 0;
+        }
+
+        .message pre code {
+            background-color: transparent;
+            padding: 0;
+        }
+
+        .user-message {
+            background-color: var(--primary-light);
+            margin-left: auto;
+        }
+
+        .assistant-message {
+            background-color: var(--gray-100);
+            margin-right: auto;
+        }
+
+        .chat-input {
+            display: flex;
+            gap: 0.5rem;
+            padding: 0.5rem;
+            border-top: 1px solid var(--gray-200);
+            background-color: white;
+        }
+
+        .chat-input input {
+            flex-grow: 1;
+            padding: 0.4rem;
+            border: 1px solid var(--gray-300);
+            border-radius: var(--border-radius);
+            outline: none;
+            font-size: 0.9rem;
+        }
+
+        .chat-input input:focus {
+            border-color: var(--primary);
+        }
+
+        .chat-input button {
+            padding: 0.5rem 1rem;
+            background-color: var(--primary);
+            color: white;
+            border: none;
+            border-radius: var(--border-radius);
+            cursor: pointer;
+        }
+
+        .chat-input button:hover {
+            background-color: var(--primary-dark);
+        }
+
+        .chat-input button:disabled {
+            background-color: var(--gray-400);
+            cursor: not-allowed;
+        }
 
         @media (max-width: 768px) {
             .container {
@@ -240,6 +376,7 @@
             }
         }
     </style>
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
 </head>
 <body>
     <header class="top-header">
@@ -266,9 +403,7 @@
                     <div class="file-size"></div>
                 </div>
                 <div class="progress" id="progress">
-                    <div class="progress-bar">
-                        <div class="progress-fill"></div>
-                    </div>
+                    正在处理第 0/0 页...
                 </div>
                 <div class="error" id="error"></div>
             </div>
@@ -284,11 +419,17 @@
                     等待文件上传...
                 </div>
                 <div id="result-text" style="display: none;"></div>
+                <div class="chat-container">
+                    <div class="chat-messages" id="chat-messages"></div>
+                    <div class="chat-input">
+                        <input type="text" id="chat-input" placeholder="输入您的问题..." disabled>
+                        <button id="send-message" disabled>发送</button>
+                    </div>
+                </div>
                 <div class="button-group">
                     <button class="btn btn-download" id="download-btn">
                         <span>下载带备注的PPT</span>
                     </button>
-                    <button class="btn btn-primary" id="generatePptButton" onclick="generatePpt()" disabled>生成新PPT</button>
                     <button class="btn btn-primary" id="speechButton" onclick="generateSpeech()" disabled>生成演讲稿</button>
                 </div>
             </div>
@@ -307,8 +448,11 @@
         const resultText = document.getElementById('result-text');
         const downloadBtn = document.getElementById('download-btn');
         const speechButton = document.getElementById('speechButton');
-        const generatePptButton = document.getElementById('generatePptButton');
+        const chatInput = document.getElementById('chat-input');
+        const sendMessage = document.getElementById('send-message');
+        const chatMessages = document.getElementById('chat-messages');
         let currentFile = null;
+        let pptContent = '';
 
         uploadBtn.addEventListener('click', () => {
             fileInput.click();
@@ -363,17 +507,23 @@
             
             currentFile = file;
             speechButton.disabled = false;
-            generatePptButton.disabled = false;
+            chatInput.disabled = false;
+            sendMessage.disabled = false;
             resultPlaceholder.style.display = 'none';
             resultText.style.display = 'none';
 
             progress.style.display = 'block';
+            progress.textContent = '正在处理...';
             uploadBtn.disabled = true;
+            downloadBtn.disabled = true;
             downloadBtn.style.display = 'inline-flex';
+
+            const formData = new FormData();
+            formData.append('file', file);
 
             fetch('/api/process-ppt', {
                 method: 'POST',
-                body: new FormData(new Blob([JSON.stringify({ file: file })]))
+                body: formData
             })
             .then(response => {
                 if (!response.ok) {
@@ -390,6 +540,7 @@
                 
                 const url = window.URL.createObjectURL(blob);
                 downloadBtn.setAttribute('data-file-url', url);
+                downloadBtn.disabled = false;
                 
                 error.textContent = '处理成功！';
                 error.classList.add('success');
@@ -399,12 +550,26 @@
                     error.style.display = 'none';
                     error.classList.remove('success');
                 }, 3000);
+                
+                // 获取PPT内容
+                const formData = new FormData();
+                formData.append('file', file);
+                return fetch('/api/get-ppt-content', {
+                    method: 'POST',
+                    body: formData
+                });
+            })
+            .then(response => response.json())
+            .then(data => {
+                pptContent = data.content;
             })
             .catch(err => {
                 error.textContent = err.message;
                 error.style.display = 'block';
                 console.error('Error:', err);
                 downloadBtn.style.display = 'none';
+                chatInput.disabled = true;
+                sendMessage.disabled = true;
             })
             .finally(() => {
                 progress.style.display = 'none';
@@ -434,7 +599,7 @@
                 speechButton.disabled = true;
                 showStatus('正在生成演讲稿...', 'success');
                 progress.style.display = 'block';
-                progress.querySelector('.progress-fill').style.width = '0%';
+                progress.textContent = '正在处理第 0/0 页...';
 
                 const response = await fetch('/api/generate-speech', {
                     method: 'POST',
@@ -457,7 +622,6 @@
                 document.body.removeChild(a);
 
                 showStatus('演讲稿生成成功！', 'success');
-                progress.querySelector('.progress-fill').style.width = '100%';
             } catch (error) {
                 showStatus('生成失败：' + error.message, 'error');
             } finally {
@@ -468,54 +632,60 @@
             }
         }
 
-        async function generatePpt() {
-            if (!currentFile) return;
+        function showStatus(message, type) {
+            error.textContent = message;
+            error.className = type;
+            error.style.display = 'block';
+        }
 
-            const formData = new FormData();
-            formData.append('file', currentFile);
+        sendMessage.addEventListener('click', async () => {
+            const message = chatInput.value.trim();
+            if (!message || !currentFile) return;
+
+            // 添加用户消息
+            addMessage(message, 'user');
+            chatInput.value = '';
 
             try {
-                generatePptButton.disabled = true;
-                showStatus('正在为PPT添加备注...', 'success');
-                progress.style.display = 'block';
-                progress.querySelector('.progress-fill').style.width = '0%';
+                const formData = new FormData();
+                formData.append('file', currentFile);
+                formData.append('question', message);
 
-                const response = await fetch('/api/process-ppt', {
+                const response = await fetch('/api/chat', {
                     method: 'POST',
                     body: formData
                 });
 
                 if (!response.ok) {
-                    const error = await response.json();
-                    throw new Error(error.error || '生成失败');
+                    throw new Error('获取回答失败');
                 }
 
-                const blob = await response.blob();
-                const url = window.URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                a.href = url;
-                a.download = 'processed_ppt.pptx';
-                document.body.appendChild(a);
-                a.click();
-                window.URL.revokeObjectURL(url);
-                document.body.removeChild(a);
-
-                showStatus('PPT备注添加成功！', 'success');
-                progress.querySelector('.progress-fill').style.width = '100%';
+                const data = await response.json();
+                addMessage(data.answer, 'assistant');
             } catch (error) {
-                showStatus('生成失败：' + error.message, 'error');
-            } finally {
-                generatePptButton.disabled = false;
-                setTimeout(() => {
-                    progress.style.display = 'none';
-                }, 1000);
+                addMessage('抱歉，获取回答时出现错误。', 'assistant');
             }
-        }
+        });
 
-        function showStatus(message, type) {
-            error.textContent = message;
-            error.className = type;
-            error.style.display = 'block';
+        chatInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                sendMessage.click();
+            }
+        });
+
+        function addMessage(text, type) {
+            const messageDiv = document.createElement('div');
+            messageDiv.className = `message ${type}-message`;
+            
+            // 使用marked库渲染Markdown
+            if (type === 'assistant') {
+                messageDiv.innerHTML = marked.parse(text);
+            } else {
+                messageDiv.textContent = text;
+            }
+            
+            chatMessages.appendChild(messageDiv);
+            chatMessages.scrollTop = chatMessages.scrollHeight;
         }
     </script>
 </body>
