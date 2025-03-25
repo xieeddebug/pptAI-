@@ -120,7 +120,8 @@ def create_word_document(speech_text):
             # 添加文本
             run = p.add_run(para.strip())
             # 设置字体
-            run.font.name = '宋体'
+            run.font.name = '仿宋'
+            run._element.rPr.rFonts.set(qn('w:eastAsia'), '仿宋')
             run.font.size = Pt(12)
     
     return doc
@@ -396,6 +397,124 @@ PPT内容：
         if 'input_path' in locals():
             os.unlink(input_path)
         return jsonify({'error': f'处理对话时出错: {str(e)}'}), 500
+
+@app.route('/api/generate-notes-collection', methods=['POST'])
+def generate_notes_collection():
+    if 'file' not in request.files:
+        return jsonify({'error': '没有上传文件'}), 400
+    
+    file = request.files['file']
+    if file.filename == '':
+        return jsonify({'error': '没有选择文件'}), 400
+    
+    if not file.filename.endswith(('.ppt', '.pptx')):
+        return jsonify({'error': '请上传PPT文件'}), 400
+
+    try:
+        # 创建临时文件保存上传的PPT
+        with tempfile.NamedTemporaryFile(delete=False, suffix='.pptx') as temp_input:
+            file.save(temp_input.name)
+            input_path = temp_input.name
+
+        # 打开PPT文件并添加备注
+        prs = Presentation(input_path)
+        
+        # 为每一页添加备注
+        for i, slide in enumerate(prs.slides, 1):
+            print(f"\n处理第 {i} 页...")
+            
+            # 获取幻灯片文本内容
+            slide_text = ""
+            for shape in slide.shapes:
+                if hasattr(shape, "text"):
+                    slide_text += shape.text + "\n"
+            
+            print(f"提取的文本内容：{slide_text[:100]}...")
+            
+            # 获取Dify生成的备注内容
+            notes_content = get_dify_response(slide_text)
+            print(f"生成的备注内容：{notes_content}")
+            
+            if not notes_content:
+                notes_content = f"第{i}页备注生成失败"
+            
+            # 获取或创建备注页
+            notes_slide = slide.notes_slide
+            notes_text_frame = notes_slide.notes_text_frame
+            
+            # 添加备注
+            notes_text_frame.text = notes_content
+
+        # 创建临时文件保存处理后的PPT
+        with tempfile.NamedTemporaryFile(delete=False, suffix='.pptx') as temp_ppt:
+            prs.save(temp_ppt.name)
+            processed_ppt_path = temp_ppt.name
+        
+        # 创建Word文档
+        doc = Document()
+        
+        # 设置标题
+        title = doc.add_heading('PPT备注合集', 0)
+        title.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        
+        # 收集每页的备注
+        for i, slide in enumerate(prs.slides, 1):
+            # 添加页码标题
+            page_title = doc.add_heading(f'第{i}页备注', level=1)
+            page_title.alignment = WD_ALIGN_PARAGRAPH.LEFT
+            
+            # 获取备注内容
+            notes_slide = slide.notes_slide
+            if notes_slide and notes_slide.notes_text_frame.text:
+                notes_text = notes_slide.notes_text_frame.text
+            else:
+                notes_text = "（此页无备注）"
+            
+            # 添加备注内容
+            p = doc.add_paragraph()
+            p.paragraph_format.line_spacing = 1.5
+            p.paragraph_format.first_line_indent = Pt(24)
+            run = p.add_run(notes_text)
+            run.font.name = '仿宋'
+            run._element.rPr.rFonts.set(qn('w:eastAsia'), '仿宋')
+            run.font.size = Pt(12)
+            
+            # 添加分隔行
+            doc.add_paragraph('', style='Normal')
+        
+        # 保存Word文档
+        with tempfile.NamedTemporaryFile(delete=False, suffix='.docx') as temp_doc:
+            doc.save(temp_doc.name)
+            doc_path = temp_doc.name
+
+        # 创建ZIP文件包含两个文件
+        with tempfile.NamedTemporaryFile(delete=False, suffix='.zip') as temp_zip:
+            import zipfile
+            with zipfile.ZipFile(temp_zip.name, 'w') as zipf:
+                zipf.write(processed_ppt_path, 'PPT带备注.pptx')
+                zipf.write(doc_path, 'PPT备注合集.docx')
+
+        # 发送ZIP文件
+        return send_file(
+            temp_zip.name,
+            as_attachment=True,
+            download_name='PPT备注文件.zip',
+            mimetype='application/zip'
+        )
+
+    except Exception as e:
+        print(f"生成备注合集时出错: {str(e)}")
+        print(f"错误堆栈: {traceback.format_exc()}")
+        # 清理临时文件
+        if 'input_path' in locals():
+            os.unlink(input_path)
+        if 'processed_ppt_path' in locals():
+            os.unlink(processed_ppt_path)
+        if 'doc_path' in locals():
+            os.unlink(doc_path)
+        if 'temp_zip' in locals():
+            os.unlink(temp_zip.name)
+        return jsonify({'error': f'生成备注合集时出错: {str(e)}'}), 500
 
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0', port=5000) 

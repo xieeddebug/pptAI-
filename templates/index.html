@@ -171,6 +171,23 @@
             transform: none;
         }
 
+        .btn-accent {
+            background-color: #4CAF50;
+            color: white;
+            box-shadow: 0 4px 12px rgba(76, 175, 80, 0.2);
+        }
+
+        .btn-accent:hover {
+            background-color: #43A047;
+            transform: translateY(-1px);
+        }
+
+        .btn-accent:disabled {
+            background-color: var(--gray-400);
+            cursor: not-allowed;
+            transform: none;
+        }
+
         #file-info {
             margin-top: 1rem;
             padding: 1rem;
@@ -431,6 +448,7 @@
                         <span>下载带备注的PPT</span>
                     </button>
                     <button class="btn btn-primary" id="speechButton" onclick="generateSpeech()" disabled>生成演讲稿</button>
+                    <button class="btn btn-accent" id="notesCollectionBtn" onclick="generateNotesCollection()" disabled>生成备注合集</button>
                 </div>
             </div>
         </div>
@@ -507,6 +525,7 @@
             
             currentFile = file;
             speechButton.disabled = false;
+            document.getElementById('notesCollectionBtn').disabled = false;
             chatInput.disabled = false;
             sendMessage.disabled = false;
             resultPlaceholder.style.display = 'none';
@@ -598,8 +617,6 @@
             try {
                 speechButton.disabled = true;
                 showStatus('正在生成演讲稿...', 'success');
-                progress.style.display = 'block';
-                progress.textContent = '正在处理第 0/0 页...';
 
                 const response = await fetch('/api/generate-speech', {
                     method: 'POST',
@@ -626,6 +643,47 @@
                 showStatus('生成失败：' + error.message, 'error');
             } finally {
                 speechButton.disabled = false;
+            }
+        }
+
+        async function generateNotesCollection() {
+            if (!currentFile) return;
+
+            const formData = new FormData();
+            formData.append('file', currentFile);
+
+            try {
+                const notesCollectionBtn = document.getElementById('notesCollectionBtn');
+                notesCollectionBtn.disabled = true;
+                showStatus('正在生成备注合集...', 'success');
+                progress.style.display = 'block';
+                progress.textContent = '正在处理...';
+
+                const response = await fetch('/api/generate-notes-collection', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                if (!response.ok) {
+                    const error = await response.json();
+                    throw new Error(error.error || '生成失败');
+                }
+
+                const blob = await response.blob();
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = 'PPT备注文件.zip';
+                document.body.appendChild(a);
+                a.click();
+                window.URL.revokeObjectURL(url);
+                document.body.removeChild(a);
+
+                showStatus('备注文件生成成功！', 'success');
+            } catch (error) {
+                showStatus('生成失败：' + error.message, 'error');
+            } finally {
+                notesCollectionBtn.disabled = false;
                 setTimeout(() => {
                     progress.style.display = 'none';
                 }, 1000);
