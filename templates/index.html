@@ -67,7 +67,7 @@
             padding: 0 2rem;
             flex-grow: 1;
             display: grid;
-            grid-template-columns: 1fr 1fr;
+            grid-template-columns: 1fr 2fr;
             gap: 2rem;
         }
 
@@ -272,15 +272,15 @@
             border: 1px solid var(--gray-200);
             border-radius: var(--border-radius);
             overflow: hidden;
-            min-height: 250px;
-            max-height: 300px;
+            min-height: 400px;
+            max-height: 500px;
         }
 
         .chat-messages {
             flex-grow: 1;
-            padding: 0.75rem;
+            padding: 1rem;
             overflow-y: auto;
-            max-height: 200px;
+            max-height: 400px;
         }
 
         .message {
@@ -392,6 +392,48 @@
                 padding: 0 1rem;
             }
         }
+
+        .status-container {
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+            margin: 1rem 0;
+        }
+
+        .status-box {
+            background: white;
+            border: 1px solid var(--gray-200);
+            border-radius: var(--border-radius);
+            padding: 1rem;
+            text-align: center;
+        }
+
+        .status-title {
+            font-size: 0.9rem;
+            color: var(--gray-600);
+            margin-bottom: 0.5rem;
+        }
+
+        .status-content {
+            font-size: 0.8rem;
+            color: var(--primary);
+            font-weight: 500;
+        }
+
+        .status-content.completed {
+            color: #4CAF50;
+        }
+
+        .estimated-time {
+            text-align: center;
+            color: var(--gray-500);
+            font-size: 0.9rem;
+            margin-top: 0.5rem;
+            padding: 0.5rem;
+            background: var(--gray-100);
+            border-radius: var(--border-radius);
+            display: none;
+        }
     </style>
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
 </head>
@@ -419,17 +461,32 @@
                     <div class="file-name"></div>
                     <div class="file-size"></div>
                 </div>
+                <div class="estimated-time" id="estimated-time"></div>
                 <div class="progress" id="progress">
                     正在处理第 0/0 页...
                 </div>
                 <div class="error" id="error"></div>
+                <div class="status-container">
+                    <div class="status-box">
+                        <div class="status-title">PPT备注</div>
+                        <div class="status-content" id="ppt-status">等待处理</div>
+                    </div>
+                    <div class="status-box">
+                        <div class="status-title">演讲稿</div>
+                        <div class="status-content" id="speech-status">等待处理</div>
+                    </div>
+                    <div class="status-box">
+                        <div class="status-title">备注合集</div>
+                        <div class="status-content" id="notes-status">等待处理</div>
+                    </div>
+                </div>
             </div>
         </div>
 
         <div class="panel">
             <div class="panel-header">
-                <h2 class="panel-title">处理结果</h2>
-                <p class="panel-subtitle">查看处理后的文件内容</p>
+                <h2 class="panel-title">智能问答助手</h2>
+                <p class="panel-subtitle">基于PPT内容回答您的问题</p>
             </div>
             <div class="panel-content" id="result-content">
                 <div id="result-placeholder" style="text-align: center; color: var(--gray-500);">
@@ -442,13 +499,6 @@
                         <input type="text" id="chat-input" placeholder="输入您的问题..." disabled>
                         <button id="send-message" disabled>发送</button>
                     </div>
-                </div>
-                <div class="button-group">
-                    <button class="btn btn-download" id="download-btn">
-                        <span>下载带备注的PPT</span>
-                    </button>
-                    <button class="btn btn-primary" id="speechButton" onclick="generateSpeech()" disabled>生成演讲稿</button>
-                    <button class="btn btn-accent" id="notesCollectionBtn" onclick="generateNotesCollection()" disabled>生成备注合集</button>
                 </div>
             </div>
         </div>
@@ -464,8 +514,6 @@
         const resultContent = document.getElementById('result-content');
         const resultPlaceholder = document.getElementById('result-placeholder');
         const resultText = document.getElementById('result-text');
-        const downloadBtn = document.getElementById('download-btn');
-        const speechButton = document.getElementById('speechButton');
         const chatInput = document.getElementById('chat-input');
         const sendMessage = document.getElementById('send-message');
         const chatMessages = document.getElementById('chat-messages');
@@ -512,181 +560,100 @@
         }
 
         function handleFile(file) {
-            if (!file.name.endsWith('.ppt') && !file.name.endsWith('.pptx')) {
-                error.textContent = '请上传PPT文件（.ppt或.pptx格式）';
-                error.style.display = 'block';
-                return;
-            }
-
             error.style.display = 'none';
-            fileInfo.style.display = 'block';
-            fileInfo.querySelector('.file-name').textContent = '文件名：' + file.name;
-            fileInfo.querySelector('.file-size').textContent = '大小：' + formatFileSize(file.size);
+            fileInfo.style.display = 'none';
             
             currentFile = file;
-            speechButton.disabled = false;
-            document.getElementById('notesCollectionBtn').disabled = false;
-            chatInput.disabled = false;
-            sendMessage.disabled = false;
             resultPlaceholder.style.display = 'none';
             resultText.style.display = 'none';
 
-            progress.style.display = 'block';
-            progress.textContent = '正在处理...';
+            // 重置状态
+            document.getElementById('ppt-status').textContent = '等待处理';
+            document.getElementById('ppt-status').classList.remove('completed');
+            document.getElementById('speech-status').textContent = '等待处理';
+            document.getElementById('speech-status').classList.remove('completed');
+            document.getElementById('notes-status').textContent = '等待处理';
+            document.getElementById('notes-status').classList.remove('completed');
+
+            // 清空聊天记录
+            chatMessages.innerHTML = '';
+
             uploadBtn.disabled = true;
-            downloadBtn.disabled = true;
-            downloadBtn.style.display = 'inline-flex';
+
+            // 立即启用问答功能
+            chatInput.disabled = false;
+            sendMessage.disabled = false;
+            resultPlaceholder.textContent = '请输入您的问题...';
+            resultPlaceholder.style.color = 'var(--gray-400)';
+
+            // 立即显示欢迎语
+            addMessage('您好！我是PPT智能助手，很高兴为您服务。PPT正在处理中，每10页PPT大约需要1分钟的处理时间，请耐心等候在此期间，您可以先和我聊天，我会尽力回答您的问题。', 'assistant');
+
+            // 立即获取PPT页数
+            const contentFormData = new FormData();
+            contentFormData.append('file', file);
+            fetch('/api/get-ppt-content', {
+                method: 'POST',
+                body: contentFormData
+            })
+            .then(response => response.json())
+            .then(data => {
+                // 保存PPT内容用于后续问答
+                pptContent = data.content;
+            });
+
+            handleFileUpload(file);
+        }
+
+        async function handleFileUpload(file) {
+            if (!file.name.endsWith('.ppt') && !file.name.endsWith('.pptx')) {
+                showStatus('请上传PPT文件（.ppt或.pptx格式）', 'error');
+                return;
+            }
 
             const formData = new FormData();
             formData.append('file', file);
 
-            fetch('/api/process-ppt', {
-                method: 'POST',
-                body: formData
-            })
-            .then(response => {
-                if (!response.ok) {
-                    return response.json().then(data => {
-                        throw new Error(data.error || '处理文件时出错');
-                    });
-                }
-                return response.blob();
-            })
-            .then(blob => {
-                resultPlaceholder.style.display = 'none';
-                resultText.style.display = 'block';
-                resultText.innerHTML = '<p>文件处理完成！</p><p>备注已添加到PPT中。</p>';
-                
-                const url = window.URL.createObjectURL(blob);
-                downloadBtn.setAttribute('data-file-url', url);
-                downloadBtn.disabled = false;
-                
-                error.textContent = '处理成功！';
-                error.classList.add('success');
-                error.style.display = 'block';
-                
-                setTimeout(() => {
-                    error.style.display = 'none';
-                    error.classList.remove('success');
-                }, 3000);
-                
-                // 获取PPT内容
-                const formData = new FormData();
-                formData.append('file', file);
-                return fetch('/api/get-ppt-content', {
-                    method: 'POST',
-                    body: formData
-                });
-            })
-            .then(response => response.json())
-            .then(data => {
-                pptContent = data.content;
-            })
-            .catch(err => {
-                error.textContent = err.message;
-                error.style.display = 'block';
-                console.error('Error:', err);
-                downloadBtn.style.display = 'none';
-                chatInput.disabled = true;
-                sendMessage.disabled = true;
-            })
-            .finally(() => {
-                progress.style.display = 'none';
-                uploadBtn.disabled = false;
-            });
-        }
-
-        downloadBtn.addEventListener('click', () => {
-            const fileUrl = downloadBtn.getAttribute('data-file-url');
-            if (!fileUrl) return;
-
-            const a = document.createElement('a');
-            a.href = fileUrl;
-            a.download = 'processed_ppt.pptx';
-            document.body.appendChild(a);
-            a.click();
-            document.body.removeChild(a);
-        });
-
-        async function generateSpeech() {
-            if (!currentFile) return;
-
-            const formData = new FormData();
-            formData.append('file', currentFile);
-
             try {
-                speechButton.disabled = true;
-                showStatus('正在生成演讲稿...', 'success');
+                // 更新所有状态为处理中
+                document.getElementById('ppt-status').textContent = '正在处理...';
+                document.getElementById('speech-status').textContent = '正在处理...';
+                document.getElementById('notes-status').textContent = '正在处理...';
 
-                const response = await fetch('/api/generate-speech', {
+                const response = await fetch('/api/process-ppt', {
                     method: 'POST',
                     body: formData
                 });
 
                 if (!response.ok) {
                     const error = await response.json();
-                    throw new Error(error.error || '生成失败');
+                    throw new Error(error.error || '处理失败');
                 }
+
+                // 更新所有状态为完成
+                document.getElementById('ppt-status').textContent = '处理完毕';
+                document.getElementById('ppt-status').classList.add('completed');
+                document.getElementById('speech-status').textContent = '处理完毕';
+                document.getElementById('speech-status').classList.add('completed');
+                document.getElementById('notes-status').textContent = '处理完毕';
+                document.getElementById('notes-status').classList.add('completed');
 
                 const blob = await response.blob();
                 const url = window.URL.createObjectURL(blob);
                 const a = document.createElement('a');
                 a.href = url;
-                a.download = '演讲稿.docx';
+                a.download = 'PPT处理结果.zip';
                 document.body.appendChild(a);
                 a.click();
                 window.URL.revokeObjectURL(url);
                 document.body.removeChild(a);
 
-                showStatus('演讲稿生成成功！', 'success');
             } catch (error) {
-                showStatus('生成失败：' + error.message, 'error');
-            } finally {
-                speechButton.disabled = false;
-            }
-        }
-
-        async function generateNotesCollection() {
-            if (!currentFile) return;
-
-            const formData = new FormData();
-            formData.append('file', currentFile);
-
-            try {
-                const notesCollectionBtn = document.getElementById('notesCollectionBtn');
-                notesCollectionBtn.disabled = true;
-                showStatus('正在生成备注合集...', 'success');
-                progress.style.display = 'block';
-                progress.textContent = '正在处理...';
-
-                const response = await fetch('/api/generate-notes-collection', {
-                    method: 'POST',
-                    body: formData
-                });
-
-                if (!response.ok) {
-                    const error = await response.json();
-                    throw new Error(error.error || '生成失败');
-                }
-
-                const blob = await response.blob();
-                const url = window.URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                a.href = url;
-                a.download = 'PPT备注文件.zip';
-                document.body.appendChild(a);
-                a.click();
-                window.URL.revokeObjectURL(url);
-                document.body.removeChild(a);
-
-                showStatus('备注文件生成成功！', 'success');
-            } catch (error) {
-                showStatus('生成失败：' + error.message, 'error');
-            } finally {
-                notesCollectionBtn.disabled = false;
-                setTimeout(() => {
-                    progress.style.display = 'none';
-                }, 1000);
+                showStatus('处理失败：' + error.message, 'error');
+                // 重置状态
+                document.getElementById('ppt-status').textContent = '处理失败';
+                document.getElementById('speech-status').textContent = '处理失败';
+                document.getElementById('notes-status').textContent = '处理失败';
             }
         }
 

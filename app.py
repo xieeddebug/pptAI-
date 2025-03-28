@@ -200,6 +200,9 @@ def process_ppt():
         # 打开PPT文件
         prs = Presentation(input_path)
         
+        # 收集所有文本用于生成演讲稿
+        all_text = ""
+        
         # 为每一页添加备注
         for i, slide in enumerate(prs.slides, 1):
             print(f"\n处理第 {i} 页...")
@@ -225,17 +228,65 @@ def process_ppt():
             
             # 添加备注
             notes_text_frame.text = notes_content
+            
+            # 收集文本用于生成演讲稿
+            all_text += f"第{i}页：\n{slide_text}\n"
         
         # 保存处理后的PPT
         prs.save(output_path)
         print("\nPPT处理完成")
         
-        # 发送处理后的文件
+        # 生成演讲稿
+        speech_text = generate_speech(all_text)
+        speech_doc = create_word_document(speech_text)
+        
+        # 创建Word文档保存演讲稿
+        with tempfile.NamedTemporaryFile(delete=False, suffix='.docx') as temp_speech:
+            speech_doc.save(temp_speech.name)
+            speech_path = temp_speech.name
+        
+        # 创建备注合集文档
+        notes_doc = Document()
+        notes_doc.add_heading('PPT备注合集', 0).alignment = WD_ALIGN_PARAGRAPH.CENTER
+        
+        for i, slide in enumerate(prs.slides, 1):
+            notes_doc.add_heading(f'第{i}页备注', level=1).alignment = WD_ALIGN_PARAGRAPH.LEFT
+            
+            notes_slide = slide.notes_slide
+            if notes_slide and notes_slide.notes_text_frame.text:
+                notes_text = notes_slide.notes_text_frame.text
+            else:
+                notes_text = "（此页无备注）"
+            
+            p = notes_doc.add_paragraph()
+            p.paragraph_format.line_spacing = 1.5
+            p.paragraph_format.first_line_indent = Pt(24)
+            run = p.add_run(notes_text)
+            run.font.name = '仿宋'
+            run._element.rPr.rFonts.set(qn('w:eastAsia'), '仿宋')
+            run.font.size = Pt(12)
+            
+            notes_doc.add_paragraph('', style='Normal')
+        
+        # 保存备注合集文档
+        with tempfile.NamedTemporaryFile(delete=False, suffix='.docx') as temp_notes:
+            notes_doc.save(temp_notes.name)
+            notes_path = temp_notes.name
+        
+        # 创建ZIP文件包含所有文件
+        with tempfile.NamedTemporaryFile(delete=False, suffix='.zip') as temp_zip:
+            import zipfile
+            with zipfile.ZipFile(temp_zip.name, 'w') as zipf:
+                zipf.write(output_path, 'PPT带备注.pptx')
+                zipf.write(speech_path, '演讲稿.docx')
+                zipf.write(notes_path, 'PPT备注合集.docx')
+        
+        # 发送ZIP文件
         return send_file(
-            output_path,
+            temp_zip.name,
             as_attachment=True,
-            download_name='processed_ppt.pptx',
-            mimetype='application/vnd.openxmlformats-officedocument.presentationml.presentation'
+            download_name='PPT处理结果.zip',
+            mimetype='application/zip'
         )
 
     except Exception as e:
@@ -246,6 +297,12 @@ def process_ppt():
             os.unlink(input_path)
         if 'output_path' in locals():
             os.unlink(output_path)
+        if 'speech_path' in locals():
+            os.unlink(speech_path)
+        if 'notes_path' in locals():
+            os.unlink(notes_path)
+        if 'temp_zip' in locals():
+            os.unlink(temp_zip.name)
         return jsonify({'error': str(e)}), 500
 
 @app.route('/api/generate-speech', methods=['POST'])
