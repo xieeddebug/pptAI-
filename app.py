@@ -35,7 +35,15 @@ def get_dify_response(slide_text):
     }
     
     data = {
-        "query": f"请对以下PPT内容进行简单润色和格式调整，要求：\n1. 保持原意，不要扩展内容\n2. 调整语言更加书面化、严谨\n3. 修正明显的语法错误\n4. 保持简洁，不要过度发挥\n\nPPT内容：{slide_text}",
+        "query": f"""请对以下PPT内容进行简单润色和格式调整，要求：
+1. 保持原意，不要扩展内容
+2. 调整语言更加书面化、严谨
+3. 修正明显的语法错误
+4. 保持简洁，不要过度发挥
+5. 不要生成任何汇报人、日期、时间等信息
+6. 如果原文中包含汇报人、日期、时间等信息，请删除这些内容
+
+PPT内容：{slide_text}""",
         "response_mode": "blocking",
         "conversation_id": "",
         "user": "ppt_user",
@@ -129,7 +137,15 @@ async def get_dify_response_async(session, slide_text):
     }
     
     data = {
-        "query": f"请对以下PPT内容进行简单润色和格式调整，要求：\n1. 保持原意，不要扩展内容\n2. 调整语言更加书面化、严谨\n3. 修正明显的语法错误\n4. 保持简洁，不要过度发挥\n\nPPT内容：{slide_text}",
+        "query": f"""请对以下PPT内容进行简单润色和格式调整，要求：
+1. 保持原意，不要扩展内容
+2. 调整语言更加书面化、严谨
+3. 修正明显的语法错误
+4. 保持简洁，不要过度发挥
+5. 不要生成任何汇报人、日期、时间等信息
+6. 如果原文中包含汇报人、日期、时间等信息，请删除这些内容
+
+PPT内容：{slide_text}""",
         "response_mode": "blocking",
         "conversation_id": "",
         "user": "ppt_user",
@@ -179,32 +195,64 @@ def process_notes_collection(prs):
     
     return doc
 
+def should_skip_text(text):
+    # 检查是否包含需要跳过的信息
+    if not text:
+        return True
+        
+    # 转换为小写进行检查
+    text_lower = text.lower()
+    
+    # 检查关键词
+    skip_keywords = ['汇报人', '单位', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday']
+    if any(keyword in text_lower for keyword in skip_keywords):
+        return True
+    
+    # 检查年份（2000-2099）
+    if any(str(year) in text for year in range(2000, 2100)):
+        return True
+    
+    # 检查月份
+    months = ['月', 'january', 'february', 'march', 'april', 'may', 'june', 'july', 'august', 'september', 'october', 'november', 'december']
+    if any(month in text_lower for month in months):
+        return True
+    
+    return False
+
 def extract_text_from_shape(shape):
     text = ""
     
     # 处理普通文本框
     if hasattr(shape, "text"):
-        text += shape.text + "\n"
+        shape_text = shape.text.strip()
+        if not should_skip_text(shape_text):
+            text += shape_text + "\n"
     
     # 处理表格
     if shape.has_table:
         for row in shape.table.rows:
+            row_text = ""
             for cell in row.cells:
-                if cell.text.strip():
-                    text += cell.text.strip() + " "
-            text += "\n"
+                cell_text = cell.text.strip()
+                if cell_text and not should_skip_text(cell_text):
+                    row_text += cell_text + " "
+            if row_text:
+                text += row_text + "\n"
     
     # 处理组合形状
     if hasattr(shape, "shapes"):
         for sub_shape in shape.shapes:
-            text += extract_text_from_shape(sub_shape)
+            sub_text = extract_text_from_shape(sub_shape)
+            if sub_text and not should_skip_text(sub_text):
+                text += sub_text
     
     # 处理SmartArt
     if hasattr(shape, "graphic_frame") and hasattr(shape.graphic_frame, "graphic_data"):
         for element in shape.graphic_frame.graphic_data.iter():
             if element.tag.endswith('}t'):  # 查找文本元素
-                if element.text:
-                    text += element.text.strip() + " "
+                element_text = element.text.strip() if element.text else ""
+                if element_text and not should_skip_text(element_text):
+                    text += element_text + " "
     
     return text
 
@@ -213,16 +261,22 @@ def extract_slide_text(slide):
     
     # 提取所有形状中的文本
     for shape in slide.shapes:
-        text += extract_text_from_shape(shape)
+        shape_text = extract_text_from_shape(shape)
+        if shape_text:
+            text += shape_text
         
     # 处理页眉页脚
     if hasattr(slide, "header"):
-        text += slide.header.text + "\n"
+        header_text = slide.header.text.strip()
+        if header_text and not should_skip_text(header_text):
+            text += header_text + "\n"
     if hasattr(slide, "footer"):
-        text += slide.footer.text + "\n"
+        footer_text = slide.footer.text.strip()
+        if footer_text and not should_skip_text(footer_text):
+            text += footer_text + "\n"
         
     # 清理文本
-    text = "\n".join(line.strip() for line in text.split("\n") if line.strip())
+    text = "\n".join(line.strip() for line in text.split("\n") if line.strip() and not should_skip_text(line.strip()))
     return text
 
 @app.route('/api/process-ppt', methods=['POST'])
