@@ -516,6 +516,37 @@
             border-radius: var(--border-radius);
             display: none;
         }
+
+        .task-options {
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+            margin: 1rem 0;
+            padding: 0.75rem;
+            background: var(--gray-100);
+            border-radius: var(--border-radius);
+        }
+
+        .checkbox-label {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            cursor: pointer;
+            user-select: none;
+            color: var(--dark);
+            font-size: 0.9rem;
+            transition: color 0.3s ease;
+        }
+
+        .checkbox-label.disabled {
+            color: var(--gray-400);
+        }
+
+        .checkbox-label input[type="checkbox"] {
+            width: 1rem;
+            height: 1rem;
+            cursor: pointer;
+        }
     </style>
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
 </head>
@@ -539,6 +570,16 @@
                     <input type="file" id="file-input" style="display: none" accept=".ppt,.pptx">
                     <button class="btn btn-primary" id="upload-btn">选择文件</button>
                 </div>
+                <div class="task-options">
+                    <label class="checkbox-label">
+                        <input type="checkbox" id="ppt-notes-checkbox" checked>
+                        <span>为 PPT 添加备注</span>
+                    </label>
+                    <label class="checkbox-label">
+                        <input type="checkbox" id="notes-collection-checkbox" checked>
+                        <span>导出备注为 Word</span>
+                    </label>
+                </div>
                 <div id="file-info">
                     <div class="file-name"></div>
                     <div class="file-size"></div>
@@ -552,10 +593,6 @@
                     <div class="status-box">
                         <div class="status-title">PPT备注</div>
                         <div class="status-content" id="ppt-status">等待处理</div>
-                    </div>
-                    <div class="status-box">
-                        <div class="status-title">演讲稿</div>
-                        <div class="status-content" id="speech-status">等待处理</div>
                     </div>
                     <div class="status-box">
                         <div class="status-title">备注合集</div>
@@ -650,12 +687,37 @@
             resultText.style.display = 'none';
 
             // 重置状态
-            document.getElementById('ppt-status').textContent = '等待处理';
-            document.getElementById('ppt-status').classList.remove('completed');
-            document.getElementById('speech-status').textContent = '等待处理';
-            document.getElementById('speech-status').classList.remove('completed');
-            document.getElementById('notes-status').textContent = '等待处理';
-            document.getElementById('notes-status').classList.remove('completed');
+            const pptStatus = document.getElementById('ppt-status');
+            const notesStatus = document.getElementById('notes-status');
+            const pptStatusBox = pptStatus.closest('.status-box');
+            const notesStatusBox = notesStatus.closest('.status-box');
+            const pptStatusTitle = pptStatusBox.querySelector('.status-title');
+            const notesStatusTitle = notesStatusBox.querySelector('.status-title');
+
+            // 根据复选框状态设置颜色和文字
+            if (!document.getElementById('ppt-notes-checkbox').checked) {
+                pptStatus.textContent = '';
+                pptStatus.classList.remove('completed');
+                pptStatus.style.color = 'var(--gray-400)';
+                pptStatusTitle.style.color = 'var(--gray-400)';
+            } else {
+                pptStatus.textContent = '等待处理';
+                pptStatus.classList.remove('completed');
+                pptStatus.style.color = '';
+                pptStatusTitle.style.color = '';
+            }
+
+            if (!document.getElementById('notes-collection-checkbox').checked) {
+                notesStatus.textContent = '';
+                notesStatus.classList.remove('completed');
+                notesStatus.style.color = 'var(--gray-400)';
+                notesStatusTitle.style.color = 'var(--gray-400)';
+            } else {
+                notesStatus.textContent = '等待处理';
+                notesStatus.classList.remove('completed');
+                notesStatus.style.color = '';
+                notesStatusTitle.style.color = '';
+            }
 
             // 清空聊天记录
             chatMessages.innerHTML = '';
@@ -669,7 +731,7 @@
             resultPlaceholder.style.color = 'var(--gray-400)';
 
             // 立即显示欢迎语
-            addMessage('您好！我是PPT智能助手，很高兴为您服务。\n\n预计需要 2-5 分钟，生成完后会自动打包下载。', 'assistant');
+            addMessage('您好！我是PPT智能助手，很高兴为您服务。\n\n预计需要 2-5 分钟，生成完后会自动下载。', 'assistant');
 
             // 立即获取PPT页数
             const contentFormData = new FormData();
@@ -695,12 +757,22 @@
 
             const formData = new FormData();
             formData.append('file', file);
+            // 添加原始文件名（不含扩展名）
+            const originalName = file.name.replace(/\.(ppt|pptx)$/, '');
+            formData.append('original_name', originalName);
+            
+            // 添加任务选项
+            formData.append('generate_ppt_notes', document.getElementById('ppt-notes-checkbox').checked);
+            formData.append('generate_notes_collection', document.getElementById('notes-collection-checkbox').checked);
 
             try {
                 // 更新所有状态为处理中
-                document.getElementById('ppt-status').textContent = '正在处理...';
-                document.getElementById('speech-status').textContent = '正在处理...';
-                document.getElementById('notes-status').textContent = '正在处理...';
+                if (document.getElementById('ppt-notes-checkbox').checked) {
+                    document.getElementById('ppt-status').textContent = '正在处理...';
+                }
+                if (document.getElementById('notes-collection-checkbox').checked) {
+                    document.getElementById('notes-status').textContent = '正在处理...';
+                }
 
                 const response = await fetch('/api/process-ppt', {
                     method: 'POST',
@@ -713,18 +785,20 @@
                 }
 
                 // 更新所有状态为完成
-                document.getElementById('ppt-status').textContent = '处理完毕';
-                document.getElementById('ppt-status').classList.add('completed');
-                document.getElementById('speech-status').textContent = '处理完毕';
-                document.getElementById('speech-status').classList.add('completed');
-                document.getElementById('notes-status').textContent = '处理完毕';
-                document.getElementById('notes-status').classList.add('completed');
+                if (document.getElementById('ppt-notes-checkbox').checked) {
+                    document.getElementById('ppt-status').textContent = '处理完毕';
+                    document.getElementById('ppt-status').classList.add('completed');
+                }
+                if (document.getElementById('notes-collection-checkbox').checked) {
+                    document.getElementById('notes-status').textContent = '处理完毕';
+                    document.getElementById('notes-status').classList.add('completed');
+                }
 
                 const blob = await response.blob();
                 const url = window.URL.createObjectURL(blob);
                 const a = document.createElement('a');
                 a.href = url;
-                a.download = 'PPT处理结果.zip';
+                a.download = `${file.name.replace(/\.(ppt|pptx)$/, '')}（处理结果）.zip`;
                 document.body.appendChild(a);
                 a.click();
                 window.URL.revokeObjectURL(url);
@@ -733,9 +807,12 @@
             } catch (error) {
                 showStatus('处理失败：' + error.message, 'error');
                 // 重置状态
-                document.getElementById('ppt-status').textContent = '处理失败';
-                document.getElementById('speech-status').textContent = '处理失败';
-                document.getElementById('notes-status').textContent = '处理失败';
+                if (document.getElementById('ppt-notes-checkbox').checked) {
+                    document.getElementById('ppt-status').textContent = '处理失败';
+                }
+                if (document.getElementById('notes-collection-checkbox').checked) {
+                    document.getElementById('notes-status').textContent = '处理失败';
+                }
             }
         }
 
@@ -794,6 +871,45 @@
             chatMessages.appendChild(messageDiv);
             chatMessages.scrollTop = chatMessages.scrollHeight;
         }
+
+        // 添加复选框状态变化的监听器
+        document.getElementById('ppt-notes-checkbox').addEventListener('change', function() {
+            const label = this.closest('.checkbox-label');
+            const pptStatus = document.getElementById('ppt-status');
+            const pptStatusBox = pptStatus.closest('.status-box');
+            const pptStatusTitle = pptStatusBox.querySelector('.status-title');
+            
+            if (!this.checked) {
+                label.classList.add('disabled');
+                pptStatus.textContent = '';
+                pptStatus.style.color = 'var(--gray-400)';
+                pptStatusTitle.style.color = 'var(--gray-400)';
+            } else {
+                label.classList.remove('disabled');
+                pptStatus.textContent = '等待处理';
+                pptStatus.style.color = '';
+                pptStatusTitle.style.color = '';
+            }
+        });
+
+        document.getElementById('notes-collection-checkbox').addEventListener('change', function() {
+            const label = this.closest('.checkbox-label');
+            const notesStatus = document.getElementById('notes-status');
+            const notesStatusBox = notesStatus.closest('.status-box');
+            const notesStatusTitle = notesStatusBox.querySelector('.status-title');
+            
+            if (!this.checked) {
+                label.classList.add('disabled');
+                notesStatus.textContent = '';
+                notesStatus.style.color = 'var(--gray-400)';
+                notesStatusTitle.style.color = 'var(--gray-400)';
+            } else {
+                label.classList.remove('disabled');
+                notesStatus.textContent = '等待处理';
+                notesStatus.style.color = '';
+                notesStatusTitle.style.color = '';
+            }
+        });
     </script>
 </body>
 </html>
