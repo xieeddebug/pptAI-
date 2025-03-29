@@ -35,6 +35,7 @@ def get_dify_response(slide_text):
     }
     
     data = {
+        "inputs": {},
         "query": f"""请对以下PPT内容进行简单润色和格式调整，要求：
 1. 保持原意，不要扩展内容
 2. 调整语言更加书面化、严谨
@@ -46,9 +47,7 @@ def get_dify_response(slide_text):
 PPT内容：{slide_text}""",
         "response_mode": "blocking",
         "conversation_id": "",
-        "user": "ppt_user",
-        "inputs": {},
-        "query_parameters": {}
+        "user": "ppt_user"
     }
     
     try:
@@ -62,8 +61,8 @@ PPT内容：{slide_text}""",
         
         if 'answer' in result:
             return result['answer']
-        elif 'choices' in result and len(result['choices']) > 0:
-            return result['choices'][0].get('message', {}).get('content', '')
+        elif 'message' in result and 'content' in result['message']:
+            return result['message']['content']
         else:
             print(f"API返回结果格式：{json.dumps(result, ensure_ascii=False)}")
             return "无法解析API返回结果"
@@ -88,12 +87,11 @@ def get_chat_response(prompt):
     }
     
     data = {
+        "inputs": {},
         "query": prompt,
         "response_mode": "blocking",
         "conversation_id": "",
-        "user": "ppt_user",
-        "inputs": {},
-        "query_parameters": {}
+        "user": "ppt_user"
     }
     
     try:
@@ -107,8 +105,8 @@ def get_chat_response(prompt):
         
         if 'answer' in result:
             return result['answer']
-        elif 'choices' in result and len(result['choices']) > 0:
-            return result['choices'][0].get('message', {}).get('content', '')
+        elif 'message' in result and 'content' in result['message']:
+            return result['message']['content']
         else:
             print(f"API返回结果格式：{json.dumps(result, ensure_ascii=False)}")
             return "无法解析API返回结果"
@@ -136,31 +134,40 @@ async def get_dify_response_async(session, slide_text):
         "Authorization": DIFY_API_KEY
     }
     
+    # 限制文本长度
+    max_length = 1500
+    if len(slide_text) > max_length:
+        # 按句号分割并保留前1500个字符的完整句子
+        sentences = slide_text[:max_length].split('。')
+        slide_text = '。'.join(sentences[:-1]) + '。'
+    
     data = {
+        "inputs": {},
         "query": f"""请对以下PPT内容进行简单润色和格式调整，要求：
 1. 保持原意，不要扩展内容
-2. 调整语言更加书面化、严谨
-3. 修正明显的语法错误
-4. 保持简洁，不要过度发挥
 5. 不要生成任何汇报人、日期、时间等信息
 6. 如果原文中包含汇报人、日期、时间等信息，请删除这些内容
 
 PPT内容：{slide_text}""",
         "response_mode": "blocking",
         "conversation_id": "",
-        "user": "ppt_user",
-        "inputs": {},
-        "query_parameters": {}
+        "user": "ppt_user"
     }
     
     try:
         async with session.post(DIFY_API_URL, headers=headers, json=data) as response:
+            if response.status != 200:
+                error_text = await response.text()
+                print(f"API错误响应: {error_text}")
+                return f"API请求失败: {response.status}"
+            
             result = await response.json()
             if 'answer' in result:
                 return result['answer']
-            elif 'choices' in result and len(result['choices']) > 0:
-                return result['choices'][0].get('message', {}).get('content', '')
+            elif 'message' in result and 'content' in result['message']:
+                return result['message']['content']
             else:
+                print(f"API返回格式异常: {result}")
                 return "无法生成备注"
     except Exception as e:
         print(f"生成备注时出错: {str(e)}")
@@ -220,67 +227,133 @@ def should_skip_text(text):
     return False
 
 def extract_text_from_shape(shape):
-    text = ""
+    text = []  # 使用列表来保持文本顺序
     
     # 处理普通文本框
     if hasattr(shape, "text"):
         shape_text = shape.text.strip()
-        if not should_skip_text(shape_text):
-            text += shape_text + "\n"
+        if shape_text:
+            text.append(shape_text)
     
     # 处理表格
-    if shape.has_table:
+    if hasattr(shape, "has_table") and shape.has_table:
         for row in shape.table.rows:
             row_text = ""
             for cell in row.cells:
                 cell_text = cell.text.strip()
-                if cell_text and not should_skip_text(cell_text):
+                if cell_text:
                     row_text += cell_text + " "
             if row_text:
-                text += row_text + "\n"
+                text.append(row_text.strip())
     
     # 处理组合形状
     if hasattr(shape, "shapes"):
         for sub_shape in shape.shapes:
             sub_text = extract_text_from_shape(sub_shape)
-            if sub_text and not should_skip_text(sub_text):
-                text += sub_text
+            text.extend(sub_text)  # 合并子形状的文本列表
     
     # 处理SmartArt
-    if hasattr(shape, "graphic_frame") and hasattr(shape.graphic_frame, "graphic_data"):
-        for element in shape.graphic_frame.graphic_data.iter():
-            if element.tag.endswith('}t'):  # 查找文本元素
-                element_text = element.text.strip() if element.text else ""
-                if element_text and not should_skip_text(element_text):
-                    text += element_text + " "
+    if hasattr(shape, "graphic_frame"):
+        # 处理SmartArt图形
+        if hasattr(shape.graphic_frame, "graphic_data"):
+            smart_art_text = ""
+            for element in shape.graphic_frame.graphic_data.iter():
+                if element.tag.endswith('}t'):  # 查找文本元素
+                    element_text = element.text.strip() if element.text else ""
+                    if element_text:
+                        smart_art_text += element_text + " "
+            if smart_art_text:
+                text.append(smart_art_text.strip())
+        
+        # 处理图表
+        if hasattr(shape.graphic_frame, "chart"):
+            chart = shape.graphic_frame.chart
+            chart_text = ""
+            
+            # 提取图表标题
+            if hasattr(chart, "has_title") and chart.has_title:
+                if hasattr(chart.title, "text_frame") and chart.title.text_frame.text:
+                    title = chart.title.text_frame.text.strip()
+                    if title:
+                        chart_text += title + " "
+            
+            # 提取图表数据标签
+            if hasattr(chart, "plots"):
+                for plot in chart.plots:
+                    if hasattr(plot, "data_labels"):
+                        for label in plot.data_labels:
+                            if hasattr(label, "text_frame") and label.text_frame and label.text_frame.text:
+                                chart_text += label.text_frame.text.strip() + " "
+            
+            if chart_text:
+                text.append(chart_text.strip())
+    
+    # 处理文本框架
+    if hasattr(shape, "text_frame"):
+        try:
+            text_frame_content = ""
+            # 处理普通文本框架
+            if shape.text_frame.text:
+                text_frame_content += shape.text_frame.text.strip() + " "
+            # 处理段落
+            for paragraph in shape.text_frame.paragraphs:
+                for run in paragraph.runs:
+                    if run.text:
+                        text_frame_content += run.text.strip() + " "
+            if text_frame_content:
+                text.append(text_frame_content.strip())
+        except Exception as e:
+            print(f"处理文本框架时出错: {str(e)}")
+    
+    # 处理占位符
+    try:
+        if hasattr(shape, "is_placeholder") and shape.is_placeholder:
+            if hasattr(shape, "text"):
+                placeholder_text = shape.text.strip()
+                if placeholder_text:
+                    text.append(placeholder_text)
+    except Exception as e:
+        print(f"处理占位符时出错: {str(e)}")
     
     return text
 
 def extract_slide_text(slide):
-    text = ""
+    all_text = []  # 使用列表存储所有文本，保持顺序
     
     # 提取所有形状中的文本
     for shape in slide.shapes:
         shape_text = extract_text_from_shape(shape)
-        if shape_text:
-            text += shape_text
-        
+        all_text.extend(shape_text)
+    
     # 处理页眉页脚
     if hasattr(slide, "header"):
         header_text = slide.header.text.strip()
-        if header_text and not should_skip_text(header_text):
-            text += header_text + "\n"
+        if header_text:
+            all_text.append(header_text)
     if hasattr(slide, "footer"):
         footer_text = slide.footer.text.strip()
-        if footer_text and not should_skip_text(footer_text):
-            text += footer_text + "\n"
-        
-    # 清理文本
-    text = "\n".join(line.strip() for line in text.split("\n") if line.strip() and not should_skip_text(line.strip()))
-    return text
+        if footer_text:
+            all_text.append(footer_text)
+    
+    # 处理备注
+    if hasattr(slide, "notes_slide") and slide.notes_slide:
+        notes_text = slide.notes_slide.notes_text_frame.text.strip()
+        if notes_text:
+            all_text.append(notes_text)
+    
+    # 去重并保持顺序
+    seen = set()
+    unique_text = []
+    for text in all_text:
+        if text not in seen:
+            seen.add(text)
+            unique_text.append(text)
+    
+    # 返回去重后的文本，保持原有顺序
+    return "\n".join(unique_text)
 
 @app.route('/api/process-ppt', methods=['POST'])
-async def process_ppt():
+def process_ppt():
     if 'file' not in request.files:
         return jsonify({'error': '没有上传文件'}), 400
     
@@ -319,26 +392,31 @@ async def process_ppt():
 
         # 如果需要生成PPT备注或备注合集，都需要先生成备注
         if generate_ppt_notes or generate_notes_collection:
-            # 创建异步会话
-            async with aiohttp.ClientSession() as session:
-                # 并行处理每页的备注
-                tasks = []
-                for i, _, slide_text in slide_texts:
-                    # 前五页直接使用原文
-                    if i <= 5:
-                        tasks.append(asyncio.create_task(asyncio.sleep(0.1, result=slide_text)))
-                    else:
+            async def process_slides():
+                async with aiohttp.ClientSession() as session:
+                    # 并行处理每页的备注
+                    tasks = []
+                    for i, slide, slide_text in slide_texts:
                         task = get_dify_response_async(session, slide_text)
                         tasks.append(task)
-                
-                # 等待所有备注生成完成
-                notes_contents = await asyncio.gather(*tasks)
+                    
+                    # 等待所有备注生成完成
+                    return await asyncio.gather(*tasks)
 
-                # 添加备注到PPT
-                for (i, slide, _), notes_content in zip(slide_texts, notes_contents):
-                    notes_slide = slide.notes_slide
-                    notes_text_frame = notes_slide.notes_text_frame
-                    notes_text_frame.text = notes_content
+            # 使用asyncio.run()运行异步任务
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            notes_contents = loop.run_until_complete(process_slides())
+            loop.close()
+
+            # 添加备注到PPT
+            for (i, slide, _), notes_content in zip(slide_texts, notes_contents):
+                if not slide.has_notes_slide:
+                    slide.notes_slide
+                notes_slide = slide.notes_slide
+                notes_text_frame = notes_slide.notes_text_frame
+                notes_text_frame.clear()  # 清除现有备注
+                notes_text_frame.text = notes_content
 
         # 保存处理后的PPT
         prs.save(output_path)
@@ -356,7 +434,7 @@ async def process_ppt():
                 
                 # 如果需要生成备注合集
                 if generate_notes_collection:
-                    # 直接生成备注合集文档，不使用线程池
+                    # 直接生成备注合集文档
                     notes_doc = process_notes_collection(prs)
                     # 保存备注合集文档
                     temp_notes = tempfile.NamedTemporaryFile(delete=False, suffix='.docx')
@@ -445,11 +523,18 @@ def chat():
         # 打开PPT文件
         prs = Presentation(input_path)
         
-        # 提取所有文本
+        # 提取前15页的文本
         all_text = ""
-        for i, slide in enumerate(prs.slides, 1):
-            slide_text = extract_slide_text(slide)
-            all_text += f"第{i}页：\n{slide_text}\n"
+        slides = list(prs.slides)  # 转换为列表
+        max_pages = min(15, len(slides))  # 取前15页或总页数的较小值
+        
+        for i in range(max_pages):
+            slide_text = extract_slide_text(slides[i])
+            all_text += f"第{i+1}页：\n{slide_text}\n"
+            
+        # 如果PPT超过15页，添加提示信息
+        if len(slides) > 15:
+            all_text += "\n注：由于PPT内容较多，仅展示前15页内容作为参考。"
 
         # 获取用户问题
         data = request.form
@@ -593,4 +678,12 @@ def generate_notes_collection():
         return jsonify({'error': f'生成备注合集时出错: {str(e)}'}), 500
 
 if __name__ == '__main__':
-    app.run(debug=True, host='0.0.0.0', port=5000) 
+    import sys
+    import platform
+    
+    if platform.system() == 'Windows':
+        # Windows系统使用事件循环策略
+        if sys.version_info[0] == 3 and sys.version_info[1] >= 8:
+            asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+    
+    app.run(debug=True, host='127.0.0.1', port=5000) 
