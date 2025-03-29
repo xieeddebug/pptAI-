@@ -36,13 +36,7 @@ def get_dify_response(slide_text):
     
     data = {
         "inputs": {},
-        "query": f"""请对以下PPT内容进行简单润色和格式调整，要求：
-1. 保持原意，不要扩展内容
-2. 调整语言更加书面化、严谨
-3. 修正明显的语法错误
-4. 保持简洁，不要过度发挥
-5. 不要生成任何汇报人、日期、时间等信息
-6. 如果原文中包含汇报人、日期、时间等信息，请删除这些内容
+        "query": f"""请对以下PPT内容进行简单提取，
 
 PPT内容：{slide_text}""",
         "response_mode": "blocking",
@@ -143,7 +137,7 @@ async def get_dify_response_async(session, slide_text):
     
     data = {
         "inputs": {},
-        "query": f"""请对以下PPT内容进行简单润色和格式调整，要求：
+        "query": f"""请对以下PPT内容进提取，要求：
 1. 保持原意，不要扩展内容
 5. 不要生成任何汇报人、日期、时间等信息
 6. 如果原文中包含汇报人、日期、时间等信息，请删除这些内容
@@ -227,13 +221,23 @@ def should_skip_text(text):
     return False
 
 def extract_text_from_shape(shape):
-    text = []  # 使用列表来保持文本顺序
+    text = set()  # 使用集合来存储文本，自动去重
     
-    # 处理普通文本框
+    # 处理文本框架（优先处理，因为这通常包含主要内容）
+    if hasattr(shape, "text_frame"):
+        try:
+            if shape.text_frame.text:
+                text.add(shape.text_frame.text.strip())
+            return text  # 如果有文本框架，直接返回其内容
+        except Exception as e:
+            print(f"处理文本框架时出错: {str(e)}")
+    
+    # 如果没有文本框架，则处理其他类型
+    # 处理普通文本
     if hasattr(shape, "text"):
         shape_text = shape.text.strip()
         if shape_text:
-            text.append(shape_text)
+            text.add(shape_text)
     
     # 处理表格
     if hasattr(shape, "has_table") and shape.has_table:
@@ -244,13 +248,13 @@ def extract_text_from_shape(shape):
                 if cell_text:
                     row_text += cell_text + " "
             if row_text:
-                text.append(row_text.strip())
+                text.add(row_text.strip())
     
     # 处理组合形状
     if hasattr(shape, "shapes"):
         for sub_shape in shape.shapes:
             sub_text = extract_text_from_shape(sub_shape)
-            text.extend(sub_text)  # 合并子形状的文本列表
+            text.update(sub_text)
     
     # 处理SmartArt
     if hasattr(shape, "graphic_frame"):
@@ -258,12 +262,12 @@ def extract_text_from_shape(shape):
         if hasattr(shape.graphic_frame, "graphic_data"):
             smart_art_text = ""
             for element in shape.graphic_frame.graphic_data.iter():
-                if element.tag.endswith('}t'):  # 查找文本元素
+                if element.tag.endswith('}t'):
                     element_text = element.text.strip() if element.text else ""
                     if element_text:
                         smart_art_text += element_text + " "
             if smart_art_text:
-                text.append(smart_art_text.strip())
+                text.add(smart_art_text.strip())
         
         # 处理图表
         if hasattr(shape.graphic_frame, "chart"):
@@ -286,71 +290,39 @@ def extract_text_from_shape(shape):
                                 chart_text += label.text_frame.text.strip() + " "
             
             if chart_text:
-                text.append(chart_text.strip())
-    
-    # 处理文本框架
-    if hasattr(shape, "text_frame"):
-        try:
-            text_frame_content = ""
-            # 处理普通文本框架
-            if shape.text_frame.text:
-                text_frame_content += shape.text_frame.text.strip() + " "
-            # 处理段落
-            for paragraph in shape.text_frame.paragraphs:
-                for run in paragraph.runs:
-                    if run.text:
-                        text_frame_content += run.text.strip() + " "
-            if text_frame_content:
-                text.append(text_frame_content.strip())
-        except Exception as e:
-            print(f"处理文本框架时出错: {str(e)}")
-    
-    # 处理占位符
-    try:
-        if hasattr(shape, "is_placeholder") and shape.is_placeholder:
-            if hasattr(shape, "text"):
-                placeholder_text = shape.text.strip()
-                if placeholder_text:
-                    text.append(placeholder_text)
-    except Exception as e:
-        print(f"处理占位符时出错: {str(e)}")
+                text.add(chart_text.strip())
     
     return text
 
 def extract_slide_text(slide):
-    all_text = []  # 使用列表存储所有文本，保持顺序
+    all_text = set()  # 使用集合存储所有文本
     
     # 提取所有形状中的文本
     for shape in slide.shapes:
         shape_text = extract_text_from_shape(shape)
-        all_text.extend(shape_text)
+        all_text.update(shape_text)
     
     # 处理页眉页脚
     if hasattr(slide, "header"):
         header_text = slide.header.text.strip()
         if header_text:
-            all_text.append(header_text)
+            all_text.add(header_text)
     if hasattr(slide, "footer"):
         footer_text = slide.footer.text.strip()
         if footer_text:
-            all_text.append(footer_text)
+            all_text.add(footer_text)
     
     # 处理备注
     if hasattr(slide, "notes_slide") and slide.notes_slide:
         notes_text = slide.notes_slide.notes_text_frame.text.strip()
         if notes_text:
-            all_text.append(notes_text)
+            all_text.add(notes_text)
     
-    # 去重并保持顺序
-    seen = set()
-    unique_text = []
-    for text in all_text:
-        if text not in seen:
-            seen.add(text)
-            unique_text.append(text)
+    # 将集合转换为列表并排序，确保输出顺序一致
+    text_list = sorted(all_text)
     
-    # 返回去重后的文本，保持原有顺序
-    return "\n".join(unique_text)
+    # 返回处理后的文本
+    return "\n".join(text for text in text_list if text)
 
 @app.route('/api/process-ppt', methods=['POST'])
 def process_ppt():
@@ -541,7 +513,7 @@ def chat():
         question = data.get('question', '')
         
         # 构建prompt
-        prompt = f"""基于以下PPT内容回答问题。如果问题与PPT内容无关，请说明无法回答。
+        prompt = f"""基于以下PPT内容回答问题。
 
 PPT内容：
 {all_text}
